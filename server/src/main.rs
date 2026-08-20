@@ -120,6 +120,11 @@ fn handle_entry(
 }
 
 fn main() -> std::io::Result<()> {
+    if !std::fs::exists("./.talescribe/")? {
+        eprintln!("not a talescribe directory, run `talescribe init`");
+        std::process::exit(1);
+    }
+
     let listener = TcpListener::bind("127.0.0.1:0")?;
 
     println!("{}", listener.local_addr()?.port());
