@@ -1,14 +1,39 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+pub mod idle {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(tag = "action", rename_all = "snake_case")]
+    pub enum Request {
+        Exit,
+        Entry,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(tag = "result", rename_all = "snake_case")]
+    pub enum Response {
+        Success,
+        InvalidCommand,
+    }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod entry {
+    use serde::{Deserialize, Serialize};
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    #[derive(Serialize, Deserialize)]
+    #[serde(tag = "action", rename_all = "snake_case")]
+    pub enum Request {
+        Get,
+        Edit { content: String },
+        Roll,
+        Accept,
+        Complete { name: String },
+    }
+
+    #[derive(Serialize, Deserialize)]
+    #[serde(tag = "result", rename_all = "snake_case")]
+    pub enum Response {
+        Content { content: String },
+        Success,
+        InvalidCommand,
     }
 }
