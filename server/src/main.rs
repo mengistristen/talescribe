@@ -1,7 +1,9 @@
-use std::{io::BufReader, net::TcpListener};
+use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
-use crate::handlers::{entry::handle_entry, idle::handle_idle};
+use crate::commands::{init, run};
 
+mod commands;
 mod handlers;
 
 enum State {
@@ -10,27 +12,30 @@ enum State {
     Exit,
 }
 
+#[derive(Parser)]
+#[command(version, about)]
+struct Cli {
+    #[command(subcommand)]
+    command: CliCommand,
+}
+
+#[derive(Subcommand)]
+enum CliCommand {
+    #[command(about = "Create a new project in the current directory")]
+    Init,
+    #[command(about = "Run the project in the current directory")]
+    Run {
+        #[arg(short, long, value_name = "PATH")]
+        client: Option<PathBuf>,
+    },
+}
+
 fn main() -> std::io::Result<()> {
-    if !std::fs::exists("./.talescribe/")? {
-        eprintln!("not a talescribe directory, run `talescribe init`");
-        std::process::exit(1);
-    }
+    let cli = Cli::parse();
 
-    let listener = TcpListener::bind("127.0.0.1:0")?;
-
-    println!("{}", listener.local_addr()?.port());
-
-    let (stream, _) = listener.accept()?;
-    let mut writer = stream.try_clone()?;
-    let mut reader = BufReader::new(stream);
-    let mut state = State::Idle;
-
-    loop {
-        state = match state {
-            State::Idle => handle_idle(&mut reader, &mut writer)?,
-            State::Entry { current_roll } => handle_entry(&mut reader, &mut writer, current_roll)?,
-            State::Exit => break,
-        }
+    match cli.command {
+        CliCommand::Init => init()?,
+        CliCommand::Run { client } => run(client)?,
     }
 
     Ok(())
