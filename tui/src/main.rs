@@ -5,7 +5,6 @@ use std::{
 };
 
 use crossterm::event::{self, Event};
-use protocol::{entry, idle};
 use ratatui::{
     DefaultTerminal, Frame,
     style::Stylize,
@@ -14,6 +13,7 @@ use ratatui::{
     widgets::{Block, Paragraph},
 };
 use serde::Serialize;
+use talescribe_protocol::{entry, idle};
 use tempfile::NamedTempFile;
 
 #[derive(Default)]

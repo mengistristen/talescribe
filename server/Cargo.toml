@@ -1,10 +1,10 @@
 [package]
-name = "server"
+name = "talescribe"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-protocol = { version = "0.1.0", path = "../protocol" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+talescribe_protocol = { version = "0.1.0", path = "../protocol" }
