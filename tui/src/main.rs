@@ -131,6 +131,8 @@ impl App {
         {
             match key.code {
                 event::KeyCode::Char('e') => self.edit_entry(terminal)?,
+                event::KeyCode::Char('r') => self.roll_entry()?,
+                event::KeyCode::Char('a') => self.accept_entry()?,
                 event::KeyCode::Char('c') => {
                     let r = serde_json::from_str(&self.send(entry::Request::Complete {
                         name: "asdf".into(),
@@ -176,6 +178,26 @@ impl App {
         let r = serde_json::from_str(&self.send(entry::Request::Edit { content })?)?;
 
         if matches!(r, entry::Response::Success) {
+            // do something
+        }
+
+        Ok(())
+    }
+
+    fn roll_entry(&mut self) -> anyhow::Result<()> {
+        let r: entry::Response = serde_json::from_str(&self.send(entry::Request::Roll)?)?;
+
+        if !matches!(r, entry::Response::Success) {
+            // do something
+        }
+
+        Ok(())
+    }
+
+    fn accept_entry(&mut self) -> anyhow::Result<()> {
+        let r: entry::Response = serde_json::from_str(&self.send(entry::Request::Accept)?)?;
+
+        if !matches!(r, entry::Response::Success) {
             // do something
         }
 

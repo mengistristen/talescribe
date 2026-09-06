@@ -5,6 +5,7 @@ use crate::commands::{init, run};
 
 mod commands;
 mod handlers;
+mod roll;
 
 enum State {
     Idle,

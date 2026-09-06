@@ -3,9 +3,10 @@ use std::{
     net::TcpStream,
 };
 
+use regex::{Captures, regex};
 use talescribe_protocol::entry;
 
-use crate::{State, handlers::send_response};
+use crate::{State, handlers::send_response, roll::parser::parse_roll};
 
 const WORKING_FILE_PATH: &str = "./.talescribe/EDIT_ENTRY";
 
@@ -15,7 +16,6 @@ fn get_entry(path: &str) -> std::io::Result<String> {
     } else {
         String::new()
     };
-
     Ok(content)
 }
 
@@ -32,9 +32,20 @@ fn edit_entry(
 }
 
 fn roll_entry(path: &str, current_roll: &mut Option<String>) -> std::io::Result<String> {
-    let content = get_entry(path)?;
+    let re = regex!(r"\{([^{}]*)\}");
 
-    *current_roll = Some(content.clone());
+    let content = get_entry(path)?;
+    let roll = re.replace_all(&content, |c: &Captures| {
+        if let Ok(("", roll)) = parse_roll(&c[1]) {
+            if let Some(result) = roll.evaluate() {
+                return result;
+            }
+        }
+
+        format!("{{{}}}", &c[1])
+    });
+
+    *current_roll = Some(roll.to_string());
 
     Ok(content)
 }
