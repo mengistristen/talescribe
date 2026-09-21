@@ -4,12 +4,11 @@ use std::{
     process::Command,
 };
 
-use crossterm::event::{self, Event};
+use crossterm::event::{self, Event, KeyCode};
 use ratatui::{
     DefaultTerminal, Frame,
     style::Stylize,
-    symbols::border,
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, Paragraph},
 };
 use serde::Serialize;
@@ -23,11 +22,82 @@ enum State {
     Entry,
 }
 
+enum IdleAction {
+    New,
+    Quit,
+}
+
+enum EntryAction {
+    Edit,
+    Roll,
+    Accept,
+    Complete,
+}
+
 struct App {
     writer: TcpStream,
     reader: BufReader<TcpStream>,
     exit: bool,
     state: State,
+}
+
+struct Keybind<T> {
+    code: KeyCode,
+    action: T,
+    name: &'static str,
+}
+
+static IDLE_KEYBINDS: &[Keybind<IdleAction>] = &[
+    Keybind {
+        code: KeyCode::Char('n'),
+        action: IdleAction::New,
+        name: "new",
+    },
+    Keybind {
+        code: KeyCode::Char('q'),
+        action: IdleAction::Quit,
+        name: "quit",
+    },
+];
+
+static ENTRY_KEYBINDS: &[Keybind<EntryAction>] = &[
+    Keybind {
+        code: KeyCode::Char('e'),
+        action: EntryAction::Edit,
+        name: "edit",
+    },
+    Keybind {
+        code: KeyCode::Char('r'),
+        action: EntryAction::Roll,
+        name: "roll",
+    },
+    Keybind {
+        code: KeyCode::Char('a'),
+        action: EntryAction::Accept,
+        name: "accept",
+    },
+    Keybind {
+        code: KeyCode::Char('c'),
+        action: EntryAction::Complete,
+        name: "complete",
+    },
+];
+
+fn build_help<A>(keybinds: &[Keybind<A>]) -> Line<'static> {
+    let mut spans = Vec::new();
+
+    for (index, keybind) in keybinds.iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::raw(" ⋅"));
+        }
+
+        spans.push(Span::raw(format!(" {} ", keybind.name)));
+        spans.push(keybind.code.to_string().yellow().bold());
+    }
+
+    spans.push(Span::raw(" "));
+
+    Line::from(spans)
 }
 
 impl App {
@@ -72,9 +142,10 @@ impl App {
     fn draw_idle(&self, frame: &mut Frame) {
         let area = frame.area();
 
+        let help = build_help(IDLE_KEYBINDS);
         let block = Block::bordered()
             .title(Line::from(" idle ").bold().left_aligned())
-            .border_set(border::THICK);
+            .title_bottom(help);
 
         frame.render_widget(Paragraph::new("You're in idle.").block(block), area);
     }
@@ -82,9 +153,10 @@ impl App {
     fn draw_entry(&self, frame: &mut Frame) {
         let area = frame.area();
 
+        let help = build_help(ENTRY_KEYBINDS);
         let block = Block::bordered()
             .title(Line::from(" entry ").bold().left_aligned())
-            .border_set(border::THICK);
+            .title_bottom(help);
 
         frame.render_widget(Paragraph::new("You're in entry.").block(block), area);
     }
@@ -93,28 +165,28 @@ impl App {
         let event = event::read()?;
 
         match self.state {
-            State::Idle => self.handle_idle_event(event),
-            State::Entry => self.handle_entry_event(event, terminal),
+            State::Idle => self.handle_idle_event(&event),
+            State::Entry => self.handle_entry_event(&event, terminal),
         }
     }
 
-    fn handle_idle_event(&mut self, event: Event) -> anyhow::Result<()> {
+    fn handle_idle_event(&mut self, event: &Event) -> anyhow::Result<()> {
         if let Event::Key(key) = event
             && key.kind.is_press()
+            && let Some(keybind) = IDLE_KEYBINDS.iter().find(|k| k.code == key.code)
         {
-            match key.code {
-                event::KeyCode::Char('q') => {
+            match keybind.action {
+                IdleAction::Quit => {
                     self.send(idle::Request::Exit)?;
                     self.exit = true;
                 }
-                event::KeyCode::Char('e') => {
+                IdleAction::New => {
                     let r = serde_json::from_str(&self.send(idle::Request::Entry)?)?;
 
                     if matches!(r, idle::Response::Success) {
                         self.state = State::Entry;
                     }
                 }
-                _ => {}
             }
         }
 
@@ -123,17 +195,18 @@ impl App {
 
     fn handle_entry_event(
         &mut self,
-        event: Event,
+        event: &Event,
         terminal: &mut DefaultTerminal,
     ) -> anyhow::Result<()> {
         if let Event::Key(key) = event
             && key.kind.is_press()
+            && let Some(keybind) = ENTRY_KEYBINDS.iter().find(|k| k.code == key.code)
         {
-            match key.code {
-                event::KeyCode::Char('e') => self.edit_entry(terminal)?,
-                event::KeyCode::Char('r') => self.roll_entry()?,
-                event::KeyCode::Char('a') => self.accept_entry()?,
-                event::KeyCode::Char('c') => {
+            match keybind.action {
+                EntryAction::Edit => self.edit_entry(terminal)?,
+                EntryAction::Roll => self.roll_entry()?,
+                EntryAction::Accept => self.accept_entry()?,
+                EntryAction::Complete => {
                     let r = serde_json::from_str(&self.send(entry::Request::Complete {
                         name: "asdf".into(),
                     })?)?;
@@ -142,7 +215,6 @@ impl App {
                         self.state = State::Idle;
                     }
                 }
-                _ => {}
             }
         }
 
