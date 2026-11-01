@@ -1,44 +1,43 @@
 use std::{
     io::{BufRead, BufReader, Write},
     net::TcpStream,
-    process::Command,
 };
 
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{self, KeyCode};
 use ratatui::{
     DefaultTerminal, Frame,
     style::Stylize,
     text::{Line, Span},
-    widgets::{Block, Paragraph},
+    widgets::ListState,
 };
 use serde::Serialize;
-use talescribe_protocol::{entry, idle};
-use tempfile::NamedTempFile;
+use talescribe_protocol::prompt::Prompt;
+
+use crate::{
+    entry::{draw_entry, handle_entry_event},
+    idle::{draw_idle, handle_idle_event},
+    prompt::{draw_prompt, handle_prompt_event},
+};
+
+mod entry;
+mod idle;
+mod prompt;
 
 #[derive(Default)]
 enum State {
     #[default]
     Idle,
+    Prompt {
+        prompts: Vec<Prompt>,
+        list_state: ListState,
+    },
     Entry,
-}
-
-enum IdleAction {
-    New,
-    Quit,
-}
-
-enum EntryAction {
-    Edit,
-    Roll,
-    Accept,
-    Complete,
 }
 
 struct App {
     writer: TcpStream,
     reader: BufReader<TcpStream>,
     exit: bool,
-    state: State,
 }
 
 struct Keybind<T> {
@@ -47,41 +46,11 @@ struct Keybind<T> {
     name: &'static str,
 }
 
-static IDLE_KEYBINDS: &[Keybind<IdleAction>] = &[
-    Keybind {
-        code: KeyCode::Char('n'),
-        action: IdleAction::New,
-        name: "new",
-    },
-    Keybind {
-        code: KeyCode::Char('q'),
-        action: IdleAction::Quit,
-        name: "quit",
-    },
-];
-
-static ENTRY_KEYBINDS: &[Keybind<EntryAction>] = &[
-    Keybind {
-        code: KeyCode::Char('e'),
-        action: EntryAction::Edit,
-        name: "edit",
-    },
-    Keybind {
-        code: KeyCode::Char('r'),
-        action: EntryAction::Roll,
-        name: "roll",
-    },
-    Keybind {
-        code: KeyCode::Char('a'),
-        action: EntryAction::Accept,
-        name: "accept",
-    },
-    Keybind {
-        code: KeyCode::Char('c'),
-        action: EntryAction::Complete,
-        name: "complete",
-    },
-];
+#[derive(thiserror::Error, Debug)]
+enum TuiError {
+    #[error("unexpected response")]
+    UnexpectedResponse,
+}
 
 fn build_help<A>(keybinds: &[Keybind<A>]) -> Line<'static> {
     let mut spans = Vec::new();
@@ -109,14 +78,15 @@ impl App {
             writer,
             reader,
             exit: false,
-            state: State::Idle,
         })
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> anyhow::Result<()> {
+        let mut state = State::Idle;
+
         while !self.exit {
-            terminal.draw(|frame| self.draw(frame))?;
-            self.handle_events(terminal)?;
+            terminal.draw(|frame| Self::draw(&mut state, frame))?;
+            state = self.handle_events(state, terminal)?;
         }
 
         Ok(())
@@ -132,148 +102,32 @@ impl App {
         Ok(buf)
     }
 
-    fn draw(&self, frame: &mut Frame) {
-        match self.state {
-            State::Idle => self.draw_idle(frame),
-            State::Entry => self.draw_entry(frame),
+    fn draw(state: &mut State, frame: &mut Frame) {
+        match state {
+            State::Idle => draw_idle(frame),
+            State::Prompt {
+                prompts,
+                list_state,
+            } => draw_prompt(frame, prompts, list_state),
+            State::Entry => draw_entry(frame),
         }
     }
 
-    fn draw_idle(&self, frame: &mut Frame) {
-        let area = frame.area();
-
-        let help = build_help(IDLE_KEYBINDS);
-        let block = Block::bordered()
-            .title(Line::from(" idle ").bold().left_aligned())
-            .title_bottom(help);
-
-        frame.render_widget(Paragraph::new("You're in idle.").block(block), area);
-    }
-
-    fn draw_entry(&self, frame: &mut Frame) {
-        let area = frame.area();
-
-        let help = build_help(ENTRY_KEYBINDS);
-        let block = Block::bordered()
-            .title(Line::from(" entry ").bold().left_aligned())
-            .title_bottom(help);
-
-        frame.render_widget(Paragraph::new("You're in entry.").block(block), area);
-    }
-
-    fn handle_events(&mut self, terminal: &mut DefaultTerminal) -> anyhow::Result<()> {
+    fn handle_events(
+        &mut self,
+        state: State,
+        terminal: &mut DefaultTerminal,
+    ) -> anyhow::Result<State> {
         let event = event::read()?;
 
-        match self.state {
-            State::Idle => self.handle_idle_event(&event),
-            State::Entry => self.handle_entry_event(&event, terminal),
+        match state {
+            State::Idle => handle_idle_event(self, &event),
+            State::Prompt {
+                prompts,
+                list_state,
+            } => handle_prompt_event(self, &event, terminal, prompts, list_state),
+            State::Entry => handle_entry_event(self, &event, terminal),
         }
-    }
-
-    fn handle_idle_event(&mut self, event: &Event) -> anyhow::Result<()> {
-        if let Event::Key(key) = event
-            && key.kind.is_press()
-            && let Some(keybind) = IDLE_KEYBINDS.iter().find(|k| k.code == key.code)
-        {
-            match keybind.action {
-                IdleAction::Quit => {
-                    self.send(idle::Request::Exit)?;
-                    self.exit = true;
-                }
-                IdleAction::New => {
-                    let r = serde_json::from_str(&self.send(idle::Request::Entry)?)?;
-
-                    if matches!(r, idle::Response::Success) {
-                        self.state = State::Entry;
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn handle_entry_event(
-        &mut self,
-        event: &Event,
-        terminal: &mut DefaultTerminal,
-    ) -> anyhow::Result<()> {
-        if let Event::Key(key) = event
-            && key.kind.is_press()
-            && let Some(keybind) = ENTRY_KEYBINDS.iter().find(|k| k.code == key.code)
-        {
-            match keybind.action {
-                EntryAction::Edit => self.edit_entry(terminal)?,
-                EntryAction::Roll => self.roll_entry()?,
-                EntryAction::Accept => self.accept_entry()?,
-                EntryAction::Complete => {
-                    let r = serde_json::from_str(&self.send(entry::Request::Complete {
-                        name: "asdf".into(),
-                    })?)?;
-
-                    if matches!(r, entry::Response::Success) {
-                        self.state = State::Idle;
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn edit_entry(&mut self, terminal: &mut DefaultTerminal) -> anyhow::Result<()> {
-        let file = NamedTempFile::new()?;
-
-        let r: entry::Response = serde_json::from_str(&self.send(entry::Request::Get)?)?;
-
-        let content = match r {
-            entry::Response::Content { content } => content,
-            _ => String::new(),
-        };
-
-        std::fs::write(file.path(), content)?;
-
-        crossterm::terminal::disable_raw_mode()?;
-        crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen)?;
-
-        Command::new(std::env::var("EDITOR")?)
-            .arg(file.path())
-            .status()?;
-
-        crossterm::terminal::enable_raw_mode()?;
-        crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
-
-        terminal.clear()?;
-
-        let content = std::fs::read_to_string(file.path())?;
-
-        let r = serde_json::from_str(&self.send(entry::Request::Edit { content })?)?;
-
-        if matches!(r, entry::Response::Success) {
-            // do something
-        }
-
-        Ok(())
-    }
-
-    fn roll_entry(&mut self) -> anyhow::Result<()> {
-        let r: entry::Response = serde_json::from_str(&self.send(entry::Request::Roll)?)?;
-
-        if !matches!(r, entry::Response::Success) {
-            // do something
-        }
-
-        Ok(())
-    }
-
-    fn accept_entry(&mut self) -> anyhow::Result<()> {
-        let r: entry::Response = serde_json::from_str(&self.send(entry::Request::Accept)?)?;
-
-        if !matches!(r, entry::Response::Success) {
-            // do something
-        }
-
-        Ok(())
     }
 }
 

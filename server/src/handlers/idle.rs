@@ -17,15 +17,15 @@ pub fn handle_idle(
 
     if let Ok(message) = serde_json::from_str::<idle::Request>(&buf) {
         match message {
-            talescribe_protocol::idle::Request::Exit => {
+            idle::Request::Exit => {
                 send_response(writer, idle::Response::Success)?;
 
                 return Ok(State::Exit);
             }
-            idle::Request::Entry => {
+            idle::Request::NewEntry => {
                 send_response(writer, idle::Response::Success)?;
 
-                return Ok(State::Entry { current_roll: None });
+                return Ok(State::Prompt { prompts: vec![] });
             }
         }
     }

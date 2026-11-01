@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+use talescribe_protocol::prompt::Prompt;
 
 use crate::commands::{init, run};
 
@@ -9,7 +10,8 @@ mod roll;
 
 enum State {
     Idle,
-    Entry { current_roll: Option<String> },
+    Prompt { prompts: Vec<Prompt> },
+    Entry { prompts: Vec<String> },
     Exit,
 }
 

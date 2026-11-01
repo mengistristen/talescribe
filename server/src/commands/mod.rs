@@ -2,7 +2,7 @@ use std::{io::BufReader, net::TcpListener, path::PathBuf, process::Command};
 
 use crate::{
     State,
-    handlers::{entry::handle_entry, idle::handle_idle},
+    handlers::{entry::handle_entry, idle::handle_idle, prompt::handle_prompt},
 };
 
 pub fn init() -> std::io::Result<()> {
@@ -42,7 +42,8 @@ pub fn run(client: Option<PathBuf>) -> std::io::Result<()> {
     loop {
         state = match state {
             State::Idle => handle_idle(&mut reader, &mut writer)?,
-            State::Entry { current_roll } => handle_entry(&mut reader, &mut writer, current_roll)?,
+            State::Prompt { prompts } => handle_prompt(&mut reader, &mut writer, prompts)?,
+            State::Entry { prompts } => handle_entry(&mut reader, &mut writer, prompts)?,
             State::Exit => break,
         }
     }

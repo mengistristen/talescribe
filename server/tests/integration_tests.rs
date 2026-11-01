@@ -5,7 +5,7 @@ use std::{
 };
 
 use serde::Serialize;
-use talescribe_protocol::{entry, idle};
+use talescribe_protocol::{entry, idle, prompt};
 use tempfile::TempDir;
 
 fn prepare() -> (TempDir, Child, TcpStream, BufReader<TcpStream>) {
@@ -62,7 +62,7 @@ fn test_entry_flow() {
     let (_dir, mut child, mut writer, mut reader) = prepare();
 
     let r = serde_json::from_str(
-        send(&mut writer, &mut reader, idle::Request::Entry)
+        send(&mut writer, &mut reader, idle::Request::NewEntry)
             .unwrap()
             .as_str(),
     )
@@ -70,19 +70,70 @@ fn test_entry_flow() {
     assert!(matches!(r, idle::Response::Success));
 
     let r = serde_json::from_str(
-        send(&mut writer, &mut reader, entry::Request::Get)
+        send(&mut writer, &mut reader, prompt::Request::Add)
             .unwrap()
             .as_str(),
     )
     .unwrap();
-    assert!(matches!(r, entry::Response::Content {content } if content.is_empty()));
+    assert!(matches!(r, prompt::Response::Success));
+
+    let r = serde_json::from_str(
+        send(
+            &mut writer,
+            &mut reader,
+            prompt::Request::Edit {
+                index: 0,
+                content: "this is the prompt".to_string(),
+            },
+        )
+        .unwrap()
+        .as_str(),
+    )
+    .unwrap();
+    assert!(matches!(r, prompt::Response::Success));
+
+    let r = serde_json::from_str(
+        send(&mut writer, &mut reader, prompt::Request::Get)
+            .unwrap()
+            .as_str(),
+    )
+    .unwrap();
+    assert!(
+        matches!(r, prompt::Response::Content { content } if content[0].prompt == "this is the prompt")
+    );
+
+    let r = serde_json::from_str(
+        send(&mut writer, &mut reader, prompt::Request::Roll { index: 0 })
+            .unwrap()
+            .as_str(),
+    )
+    .unwrap();
+    assert!(matches!(r, prompt::Response::Success));
+
+    let r = serde_json::from_str(
+        send(&mut writer, &mut reader, prompt::Request::Get)
+            .unwrap()
+            .as_str(),
+    )
+    .unwrap();
+    assert!(
+        matches!(r, prompt::Response::Content {content} if content[0].roll == Some("this is the prompt".to_string()))
+    );
+
+    let r = serde_json::from_str(
+        send(&mut writer, &mut reader, prompt::Request::StartEntry)
+            .unwrap()
+            .as_str(),
+    )
+    .unwrap();
+    assert!(matches!(r, prompt::Response::Success));
 
     let r = serde_json::from_str(
         send(
             &mut writer,
             &mut reader,
             entry::Request::Edit {
-                content: "this is the entry".into(),
+                content: "this is the entry".to_string(),
             },
         )
         .unwrap()
@@ -97,30 +148,14 @@ fn test_entry_flow() {
             .as_str(),
     )
     .unwrap();
-    assert!(matches!(r, entry::Response::Content { content } if content == "this is the entry"));
-
-    let r = serde_json::from_str(
-        send(&mut writer, &mut reader, entry::Request::Roll)
-            .unwrap()
-            .as_str(),
-    )
-    .unwrap();
-    assert!(matches!(r, entry::Response::Content { content } if content == "this is the entry"));
-
-    let r = serde_json::from_str(
-        send(&mut writer, &mut reader, entry::Request::Accept)
-            .unwrap()
-            .as_str(),
-    )
-    .unwrap();
-    assert!(matches!(r, entry::Response::Success));
+    assert!(matches!(r, entry::Response::Content {content, ..} if content == "this is the entry"));
 
     let r = serde_json::from_str(
         send(
             &mut writer,
             &mut reader,
             entry::Request::Complete {
-                name: "my_entry".into(),
+                name: "my_entry".to_string(),
             },
         )
         .unwrap()
