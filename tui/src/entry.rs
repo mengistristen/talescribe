@@ -82,7 +82,7 @@ pub fn handle_entry_event(
         EntryAction::Back => {
             let r = serde_json::from_str(app.send(entry::Request::Back)?.as_ref())?;
 
-            if matches!(r, entry::Response::Success) {
+            if !matches!(r, entry::Response::Success) {
                 return Err(TuiError::UnexpectedResponse.into());
             }
 
@@ -94,7 +94,7 @@ pub fn handle_entry_event(
         EntryAction::Abort => {
             let r = serde_json::from_str(app.send(entry::Request::Abort)?.as_ref())?;
 
-            if matches!(r, entry::Response::Success) {
+            if !matches!(r, entry::Response::Success) {
                 return Err(TuiError::UnexpectedResponse.into());
             }
 
