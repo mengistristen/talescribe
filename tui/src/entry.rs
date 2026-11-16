@@ -1,7 +1,7 @@
 use std::process::Command;
 
 use crossterm::event::{Event, KeyCode};
-use indoc::indoc;
+use indoc::formatdoc;
 use ratatui::{
     DefaultTerminal, Frame,
     style::Stylize,
@@ -9,7 +9,7 @@ use ratatui::{
     widgets::{Block, ListState, Paragraph},
 };
 use regex::regex;
-use talescribe_protocol::entry;
+use talescribe_protocol::{entry, prompt};
 use tempfile::NamedTempFile;
 
 use crate::{App, Keybind, State, TuiError, build_help};
@@ -44,7 +44,7 @@ static ENTRY_KEYBINDS: &[Keybind<EntryAction>] = &[
     },
 ];
 
-pub fn draw_entry(frame: &mut Frame) {
+pub fn draw_entry(frame: &mut Frame, content: &str) {
     let area = frame.area();
 
     let help = build_help(ENTRY_KEYBINDS);
@@ -52,33 +52,60 @@ pub fn draw_entry(frame: &mut Frame) {
         .title(Line::from(" entry ").bold().left_aligned())
         .title_bottom(help);
 
-    frame.render_widget(Paragraph::new("You're in entry.").block(block), area);
+    frame.render_widget(Paragraph::new(content).block(block), area);
 }
 
 pub fn handle_entry_event(
     app: &mut App,
     event: &Event,
     terminal: &mut DefaultTerminal,
+    content: String,
+    prompts: Vec<String>,
 ) -> anyhow::Result<State> {
     let Event::Key(key) = event else {
-        return Ok(State::Entry);
+        return Ok(State::Entry { content, prompts });
     };
 
     if !key.kind.is_press() {
-        return Ok(State::Entry);
+        return Ok(State::Entry { content, prompts });
     }
 
     let Some(keybind) = ENTRY_KEYBINDS.iter().find(|k| k.code == key.code) else {
-        return Ok(State::Entry);
+        return Ok(State::Entry { content, prompts });
     };
 
     match keybind.action {
         EntryAction::Edit => {
-            edit_entry(app, terminal)?;
+            let content = launch_entry_editor(terminal, content.as_ref())?;
 
-            Ok(State::Entry)
+            let r = serde_json::from_str(app.send(entry::Request::Edit { content })?.as_ref())?;
+
+            if !matches!(r, entry::Response::Success) {
+                return Err(TuiError::UnexpectedResponse.into());
+            }
+
+            let r = serde_json::from_str(app.send(entry::Request::Get)?.as_ref())?;
+
+            let entry::Response::Content { content, prompts } = r else {
+                return Err(TuiError::UnexpectedResponse.into());
+            };
+
+            Ok(State::Entry { content, prompts })
         }
-        EntryAction::Complete => todo!(),
+        EntryAction::Complete => {
+            let r = serde_json::from_str(
+                app.send(entry::Request::Complete {
+                    name: "asdf".to_string(),
+                })?
+                .as_ref(),
+            )?;
+
+            if !matches!(r, entry::Response::Success) {
+                return Err(TuiError::UnexpectedResponse.into());
+            }
+
+            Ok(State::Idle)
+        }
         EntryAction::Back => {
             let r = serde_json::from_str(app.send(entry::Request::Back)?.as_ref())?;
 
@@ -86,9 +113,20 @@ pub fn handle_entry_event(
                 return Err(TuiError::UnexpectedResponse.into());
             }
 
+            let r = serde_json::from_str(app.send(prompt::Request::Get)?.as_ref())?;
+
+            let prompt::Response::Content { content } = r else {
+                return Err(TuiError::UnexpectedResponse.into());
+            };
+            let mut list_state = ListState::default();
+
+            if !content.is_empty() {
+                list_state.select_first();
+            }
+
             Ok(State::Prompt {
-                prompts: vec![],
-                list_state: ListState::default(),
+                prompts: content,
+                list_state,
             })
         }
         EntryAction::Abort => {
@@ -103,13 +141,13 @@ pub fn handle_entry_event(
     }
 }
 
-fn edit_entry(_app: &mut App, terminal: &mut DefaultTerminal) -> anyhow::Result<String> {
+fn launch_entry_editor(terminal: &mut DefaultTerminal, content: &str) -> anyhow::Result<String> {
     let file = NamedTempFile::with_suffix(".md")?;
 
     std::fs::write(
         file.path(),
-        indoc! {"
-
+        formatdoc! {"
+        {content}
         <!--
         holy cow, you're writing an entry
         -->

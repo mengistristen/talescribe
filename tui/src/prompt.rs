@@ -9,7 +9,10 @@ use ratatui::{
     widgets::{Block, List, ListState},
 };
 use regex::regex;
-use talescribe_protocol::prompt::{self, Prompt};
+use talescribe_protocol::{
+    entry,
+    prompt::{self, Prompt},
+};
 use tempfile::NamedTempFile;
 
 use crate::{App, Keybind, State, TuiError, build_help};
@@ -143,7 +146,13 @@ pub fn handle_prompt_event(
                 return Err(TuiError::UnexpectedResponse.into());
             }
 
-            Ok(State::Entry)
+            let r = serde_json::from_str(app.send(entry::Request::Get)?.as_ref())?;
+
+            let entry::Response::Content { content, prompts } = r else {
+                return Err(TuiError::UnexpectedResponse.into());
+            };
+
+            Ok(State::Entry { content, prompts })
         }
         PromptAction::Up => {
             list_state.select_previous();
@@ -236,7 +245,7 @@ fn edit_prompt(
             list_state,
         });
     };
-    let content = launch_prompt_editor(app, terminal, prompts[index].prompt.as_ref())?;
+    let content = launch_prompt_editor(terminal, prompts[index].prompt.as_ref())?;
 
     let r = serde_json::from_str(app.send(prompt::Request::Edit { index, content })?.as_ref())?;
 
@@ -286,11 +295,7 @@ fn roll_prompt(
     })
 }
 
-fn launch_prompt_editor(
-    _app: &mut App,
-    terminal: &mut DefaultTerminal,
-    content: &str,
-) -> anyhow::Result<String> {
+fn launch_prompt_editor(terminal: &mut DefaultTerminal, content: &str) -> anyhow::Result<String> {
     let file = NamedTempFile::with_suffix(".md")?;
 
     std::fs::write(

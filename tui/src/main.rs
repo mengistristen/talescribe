@@ -31,7 +31,10 @@ enum State {
         prompts: Vec<Prompt>,
         list_state: ListState,
     },
-    Entry,
+    Entry {
+        content: String,
+        prompts: Vec<String>,
+    },
 }
 
 struct App {
@@ -109,7 +112,10 @@ impl App {
                 prompts,
                 list_state,
             } => draw_prompt(frame, prompts, list_state),
-            State::Entry => draw_entry(frame),
+            State::Entry {
+                content,
+                prompts: _,
+            } => draw_entry(frame, content),
         }
     }
 
@@ -126,7 +132,9 @@ impl App {
                 prompts,
                 list_state,
             } => handle_prompt_event(self, &event, terminal, prompts, list_state),
-            State::Entry => handle_entry_event(self, &event, terminal),
+            State::Entry { content, prompts } => {
+                handle_entry_event(self, &event, terminal, content, prompts)
+            }
         }
     }
 }
