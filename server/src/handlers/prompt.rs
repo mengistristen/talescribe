@@ -1,24 +1,17 @@
 use regex::{Captures, regex};
-use std::{
-    io::{BufRead, BufReader},
-    net::TcpStream,
-};
+use std::net::TcpStream;
 
 use talescribe_protocol::prompt;
 
 use crate::{Prompt, State, handlers::send_response, roll::parser::parse_roll};
 
 pub fn handle_prompt(
-    reader: &mut BufReader<TcpStream>,
     writer: &mut TcpStream,
+    message: &str,
     mut prompts: Vec<Prompt>,
 ) -> std::io::Result<State> {
-    let mut buf = String::new();
-
-    reader.read_line(&mut buf)?;
-
-    if let Ok(message) = serde_json::from_str::<prompt::Request>(&buf) {
-        match message {
+    if let Ok(request) = serde_json::from_str::<prompt::Request>(message) {
+        match request {
             prompt::Request::Get => {
                 send_response(
                     writer,

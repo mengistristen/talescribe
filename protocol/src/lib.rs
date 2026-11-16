@@ -1,3 +1,17 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum Request {
+    GetTables,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum Response {
+    Tables { names: Vec<String> },
+}
+
 pub mod idle {
     use serde::{Deserialize, Serialize};
 
@@ -26,6 +40,7 @@ pub mod prompt {
     }
 
     #[derive(Serialize, Deserialize)]
+    #[serde(tag = "action", rename_all = "snake_case")]
     pub enum Request {
         Get,
         Add,
@@ -37,6 +52,7 @@ pub mod prompt {
     }
 
     #[derive(Serialize, Deserialize)]
+    #[serde(tag = "action", rename_all = "snake_case")]
     pub enum Response {
         Content { content: Vec<Prompt> },
         Success,

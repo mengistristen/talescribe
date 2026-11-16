@@ -1,4 +1,12 @@
-use std::{io::BufReader, net::TcpListener, path::PathBuf, process::Command};
+use std::{
+    io::{BufRead, BufReader},
+    net::TcpListener,
+    path::PathBuf,
+    process::Command,
+};
+
+use log::info;
+use talescribe_protocol::Request;
 
 use crate::{
     State,
@@ -40,11 +48,25 @@ pub fn run(client: Option<PathBuf>) -> std::io::Result<()> {
     let mut state = State::Idle;
 
     loop {
-        state = match state {
-            State::Idle => handle_idle(&mut reader, &mut writer)?,
-            State::Prompt { prompts } => handle_prompt(&mut reader, &mut writer, prompts)?,
-            State::Entry { prompts } => handle_entry(&mut reader, &mut writer, prompts)?,
-            State::Exit => break,
+        if let State::Exit = state {
+            break;
+        }
+
+        let mut message = String::new();
+
+        reader.read_line(&mut message)?;
+
+        info!("incoming <-- {}", message.trim());
+
+        if let Ok(_request) = serde_json::from_str::<Request>(&message) {
+            todo!("handle generic request")
+        } else {
+            state = match state {
+                State::Idle => handle_idle(&mut writer, &message)?,
+                State::Prompt { prompts } => handle_prompt(&mut writer, &message, prompts)?,
+                State::Entry { prompts } => handle_entry(&mut writer, &message, prompts)?,
+                State::Exit => unreachable!(),
+            }
         }
     }
 

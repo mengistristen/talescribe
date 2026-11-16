@@ -1,7 +1,4 @@
-use std::{
-    io::{BufRead, BufReader},
-    net::TcpStream,
-};
+use std::net::TcpStream;
 
 use talescribe_protocol::{entry, prompt::Prompt};
 
@@ -41,16 +38,12 @@ fn complete_entry(path: &str, name: &str) -> std::io::Result<()> {
 }
 
 pub fn handle_entry(
-    reader: &mut BufReader<TcpStream>,
     writer: &mut TcpStream,
+    message: &str,
     prompts: Vec<String>,
 ) -> std::io::Result<State> {
-    let mut buf = String::new();
-
-    reader.read_line(&mut buf)?;
-
-    if let Ok(message) = serde_json::from_str::<entry::Request>(&buf) {
-        match message {
+    if let Ok(request) = serde_json::from_str::<entry::Request>(message) {
+        match request {
             entry::Request::Get => {
                 let content = get_entry(WORKING_FILE_PATH)?;
 
